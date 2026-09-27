@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, resolveReportRange, summarizeCouriers, summarizeShifts } from "../../src/lib/reports/metrics";
+import { buildReport, resolveReportRange, summarizeCouriers, summarizeShifts, summarizeWeekdayShifts } from "../../src/lib/reports/metrics";
 import type { ClosureFacts } from "../../src/lib/dashboard/metrics";
 
 function fact(date: string, salesCents: number, soldQuantity: number): ClosureFacts {
@@ -62,5 +62,21 @@ describe("reports", () => {
     ]);
     expect(am.salesCents).toBe(13050);
     expect(am.profitCents).toBeNull();
+  });
+
+  it("compares weekdays separately by registered shift, including zero sales but not missing shifts", () => {
+    const summary = summarizeWeekdayShifts([
+      { date: "2026-09-14", shift: "AM", soldQuantity: 2, salesCents: 1000, profitCents: null },
+      { date: "2026-09-21", shift: "AM", soldQuantity: 4, salesCents: 2000, profitCents: null },
+      { date: "2026-09-21", shift: "AM", soldQuantity: 2, salesCents: 1000, profitCents: null },
+      { date: "2026-09-21", shift: "PM", soldQuantity: 0, salesCents: 0, profitCents: null },
+      { date: "2026-09-23", shift: "PM", soldQuantity: 10, salesCents: 5000, profitCents: null },
+      { date: "2026-09-28", shift: "AM", soldQuantity: 100, salesCents: 50000, profitCents: null },
+    ], { start: "2026-09-14", end: "2026-09-25" });
+    expect(summary[0]).toEqual({ index: 0,
+      AM: { count: 2, salesCents: 2000, soldQuantity: 4 },
+      PM: { count: 1, salesCents: 0, soldQuantity: 0 } });
+    expect(summary[1].AM).toEqual({ count: 0, salesCents: null, soldQuantity: null });
+    expect(summary[2].PM).toEqual({ count: 1, salesCents: 5000, soldQuantity: 10 });
   });
 });

@@ -49,6 +49,33 @@ export function summarizeShifts(facts: ShiftFact[]) {
   });
 }
 
+export function summarizeWeekdayShifts(facts: ShiftFact[], range: ReportRange) {
+  const byDateAndShift = new Map<string, { date: string; shift: ShiftFact["shift"]; salesCents: number; soldQuantity: number }>();
+  for (const fact of facts) {
+    if (fact.date < range.start || fact.date > range.end) continue;
+    const key = `${fact.date}:${fact.shift}`;
+    const previous = byDateAndShift.get(key);
+    byDateAndShift.set(key, {
+      date: fact.date,
+      shift: fact.shift,
+      salesCents: (previous?.salesCents ?? 0) + fact.salesCents,
+      soldQuantity: (previous?.soldQuantity ?? 0) + fact.soldQuantity,
+    });
+  }
+  const rows = [...byDateAndShift.values()];
+  return Array.from({ length: 7 }, (_, index) => {
+    const summarizeShift = (shift: ShiftFact["shift"]) => {
+      const matches = rows.filter((row) => row.shift === shift && weekdayIndex(row.date) === index);
+      return {
+        count: matches.length,
+        salesCents: matches.length ? Math.round(matches.reduce((sum, row) => sum + row.salesCents, 0) / matches.length) : null,
+        soldQuantity: matches.length ? Math.round(matches.reduce((sum, row) => sum + row.soldQuantity, 0) / matches.length * 10) / 10 : null,
+      };
+    };
+    return { index, AM: summarizeShift("AM"), PM: summarizeShift("PM") };
+  });
+}
+
 export function resolveReportRange(selection: ReportSelection, today: string): ReportRange {
   const thisMonday = mondayOf(today);
   const thisMonth = monthStart(today);
