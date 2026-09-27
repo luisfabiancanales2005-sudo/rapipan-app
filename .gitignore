@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnpm-store/
+supabase/.temp/
+
+# Next.js
+.next/
+out/
+
+# local environment
+.env
+.env.local
+.env.*.local
+
+# logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+__pycache__/
+*.pyc
+
+# private historical source; never publish with the GitHub Pages repository
+Rapipan_Control_24Ago_11Dic_2026.xlsx
+Rapipan_Control_24Ago_11Dic_2026.xlsm
+
+# local project references and historical reconciliation (contain business data)
+/README.md
+PROYECTO.MD.txt
+Imagen de ChatGPT 25 sept 2026, 01_03_16 a.m.png
+CLAUDE.md
+AGENTS.md
+docs/
+scripts/migrate_excel_once.py
+tests/test_migrate_excel.py
