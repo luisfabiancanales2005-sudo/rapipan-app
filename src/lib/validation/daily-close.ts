@@ -14,6 +14,7 @@ export const closureSchema = z.object({
   operatingDate: z.iso.date(),
   purchases: z.array(z.object({ productId: z.string().uuid(), quantity: quantity.positive(), unitCostCents: cents, shift })),
   capitalContributions: z.array(z.object({ ownerId: z.string().uuid(), amountCents: cents })).length(2),
+  businessPaidPurchasesCents: cents.optional(),
   sales: z.array(z.object({ productId: z.string().uuid(), quantity: quantity.positive(), unitPriceCents: cents, shift })),
   leftovers: z.array(z.object({ productId: z.string().uuid(), giftedQuantity: quantity, consumedQuantity: quantity, shift })),
   courierRuns: z.array(z.object({
@@ -46,8 +47,11 @@ export function validateClosure(input: ClosureInput): string[] {
   if (input.purchases.length === 0) errors.push("Registra al menos una compra para cerrar el día.");
   if (new Set(input.capitalContributions.map((line) => line.ownerId)).size !== 2
     || input.capitalContributions.some((line) => !ownerIds.has(line.ownerId))) errors.push("Registra el aporte de cada socio.");
-  if (input.capitalContributions.reduce((sum, line) => sum + line.amountCents, 0) !== result.purchaseCostCents) {
-    errors.push("Los aportes de los socios deben sumar el costo total de las compras.");
+  if (result.businessPaidPurchasesCents > input.purchases.filter((line) => line.shift === "PM").reduce((sum, line) => sum + line.quantity * line.unitCostCents, 0)) {
+    errors.push("El dinero de caja usado para panes no puede superar el costo de las compras de PM.");
+  }
+  if (input.capitalContributions.reduce((sum, line) => sum + line.amountCents, 0) + result.businessPaidPurchasesCents !== result.purchaseCostCents) {
+    errors.push("Los aportes de los socios más el dinero usado de caja deben sumar el costo total de las compras.");
   }
   if (input.expenses.some((line) => line.payer.type === "owner" && !ownerIds.has(line.payer.ownerId))) {
     errors.push("El gasto debe indicar un socio válido.");

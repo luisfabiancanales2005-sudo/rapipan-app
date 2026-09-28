@@ -48,7 +48,7 @@ export function calculateClosure(input: ClosureInput) {
   const creditCents = input.credit?.amountCents ?? 0;
   const creditCollectionsCents = input.creditCollectionsCents ?? 0;
   const cashFromSalesCents = salesCents - creditCents;
-  const businessPaidPurchasesCents = 0;
+  const businessPaidPurchasesCents = input.businessPaidPurchasesCents ?? 0;
   const businessPaidExpensesCents = input.expenses
     .filter((line) => line.payer.type === "business_cash")
     .reduce((sum, line) => sum + line.amountCents, 0);

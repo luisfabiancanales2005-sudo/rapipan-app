@@ -111,6 +111,40 @@ describe("dinero y utilidad", () => {
     expect(settlement.settlements.map((line) => line.economicProfitShareCents)).toEqual([975, 975]);
     expect(settlement.settlements.map((line) => line.totalCashDueCents)).toEqual([3475, 5975]);
   });
+
+  it("usa ventas de AM para panes de PM y solo reembolsa aportes reales", () => {
+    const input = example();
+    input.purchases = [
+      { productId: PRODUCT, quantity: 20, unitCostCents: 200, shift: "AM" },
+      { productId: PRODUCT, quantity: 25, unitCostCents: 200, shift: "PM" },
+    ];
+    input.sales = [
+      { productId: PRODUCT, quantity: 20, unitPriceCents: 350, shift: "AM" },
+      { productId: PRODUCT, quantity: 25, unitPriceCents: 320, shift: "PM" },
+    ];
+    input.leftovers = [];
+    input.courierRuns = [];
+    input.businessPaidPurchasesCents = 5000;
+    input.capitalContributions = [{ ownerId: FABIANA, amountCents: 2000 }, { ownerId: FABIAN, amountCents: 2000 }];
+    expect(validateClosure(input)).toEqual([]);
+    const result = calculateSettlement(input);
+    expect(result.economicProfitCents).toBe(6000);
+    expect(result.cashBeforeSettlementCents).toBe(10000);
+    expect(result.settlements.map((line) => line.totalCashDueCents)).toEqual([5000, 5000]);
+    expect(result.settlements.map((line) => line.capitalContributedCents)).toEqual([2000, 2000]);
+  });
+
+  it("admite adelanto de ambos turnos sin usar caja y rechaza caja mayor que compra PM", () => {
+    const input = example();
+    input.purchases = [
+      { productId: PRODUCT, quantity: 10, unitCostCents: 250, shift: "AM" },
+      { productId: PRODUCT, quantity: 20, unitCostCents: 250, shift: "PM" },
+    ];
+    expect(validateClosure(input)).toEqual([]);
+    input.businessPaidPurchasesCents = 5001;
+    input.capitalContributions = [{ ownerId: FABIANA, amountCents: 1250 }, { ownerId: FABIAN, amountCents: 1249 }];
+    expect(validateClosure(input)).toContain("El dinero de caja usado para panes no puede superar el costo de las compras de PM.");
+  });
 });
 
 describe("liquidación", () => {

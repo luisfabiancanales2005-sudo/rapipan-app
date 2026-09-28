@@ -52,6 +52,7 @@ export type ClosureInput = {
   operatingDate: string;
   purchases: PurchaseInput[];
   capitalContributions: CapitalContributionInput[];
+  businessPaidPurchasesCents?: number;
   sales: SaleBatchInput[];
   leftovers: LeftoverInput[];
   courierRuns: CourierRunInput[];

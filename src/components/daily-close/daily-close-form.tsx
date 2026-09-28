@@ -62,7 +62,9 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
   const [creditAmount, setCreditAmount] = useState(initialInput?.credit ? soles(initialInput.credit.amountCents) : "");
   const [creditReference, setCreditReference] = useState(initialInput?.credit?.reference ?? "");
   const [expenses, setExpenses] = useState<ExpenseRow[]>(() => initialInput?.expenses.map((item) => ({ concept: item.concept, amount: soles(item.amountCents), payer: item.payer.type === "owner" ? item.payer.ownerId : "cash", shift: item.shift })) ?? []);
-  const [customContributions, setCustomContributions] = useState(Boolean(initialInput && initialInput.capitalContributions.some((item) => item.amountCents !== allocateCents(initialInput.purchases.reduce((sum, line) => sum + line.quantity * line.unitCostCents, 0), catalog.owners.map((owner) => ({ id: owner.id, weight: 1, sortOrder: owner.sortOrder })))[item.ownerId])));
+  const [useBusinessCashForPm, setUseBusinessCashForPm] = useState((initialInput?.businessPaidPurchasesCents ?? 0) > 0);
+  const [businessCashForPm, setBusinessCashForPm] = useState(soles(initialInput?.businessPaidPurchasesCents ?? 0));
+  const [customContributions, setCustomContributions] = useState(Boolean(initialInput && initialInput.capitalContributions.some((item) => item.amountCents !== allocateCents(initialInput.purchases.reduce((sum, line) => sum + line.quantity * line.unitCostCents, 0) - (initialInput.businessPaidPurchasesCents ?? 0), catalog.owners.map((owner) => ({ id: owner.id, weight: 1, sortOrder: owner.sortOrder })))[item.ownerId])));
   const [contributionAmounts, setContributionAmounts] = useState<Record<string, string>>(() => Object.fromEntries((initialInput?.capitalContributions ?? []).map((item) => [item.ownerId, soles(item.amountCents)])));
   const [openingCash, setOpeningCash] = useState(soles(initialInput?.openingBusinessCashCents ?? 0));
   const [reservedCash, setReservedCash] = useState(soles(initialInput?.reservedBusinessCashCents ?? 0));
@@ -94,13 +96,16 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
     if (parseMoney(openingCash) === null || parseMoney(reservedCash) === null) return null;
     if (courierRuns.some((row) => !row.courierId || whole(row.delivered) === null || parseMoney(row.commission) === null || parseMoney(row.extraCommission) === null)) return null;
     if (creditEnabled && parseMoney(creditAmount) === null) return null;
+    if (useBusinessCashForPm && parseMoney(businessCashForPm) === null) return null;
     const purchaseCostCents = purchaseLines.reduce((sum, row) => sum + whole(row.quantity)! * parseMoney(row.unitCost)!, 0);
-    const defaultContributions = allocateCents(purchaseCostCents, catalog.owners.map((owner) => ({ id: owner.id, weight: 1, sortOrder: owner.sortOrder })));
+    const businessPaidPurchasesCents = useBusinessCashForPm ? parseMoney(businessCashForPm)! : 0;
+    const defaultContributions = allocateCents(Math.max(0, purchaseCostCents - businessPaidPurchasesCents), catalog.owners.map((owner) => ({ id: owner.id, weight: 1, sortOrder: owner.sortOrder })));
     if (customContributions && catalog.owners.some((owner) => parseMoney(contributionAmounts[owner.id] ?? "") === null)) return null;
     return {
       operatingDate: date,
       purchases: purchaseLines.map((row) => ({ productId: row.productId, quantity: whole(row.quantity)!, unitCostCents: parseMoney(row.unitCost)!, shift: row.shift })),
       capitalContributions: catalog.owners.map((owner) => ({ ownerId: owner.id, amountCents: customContributions ? parseMoney(contributionAmounts[owner.id] ?? "")! : defaultContributions[owner.id] })),
+      businessPaidPurchasesCents,
       sales: saleLines.map((row) => ({ productId: row.productId, quantity: whole(row.quantity)!, unitPriceCents: parseMoney(row.unitPrice)!, shift: row.shift })),
       leftovers: catalog.products.flatMap((product) => (["AM", "PM"] as const).map((shift) => ({ productId: product.id, shift, giftedQuantity: whole(leftovers[`${shift}:${product.id}`]?.gifted || "0")!, consumedQuantity: whole(leftovers[`${shift}:${product.id}`]?.consumed || "0")! }))),
       courierRuns: courierRuns.map((row) => ({ productId: row.productId, courierId: row.courierId, deliveredQuantity: whole(row.delivered)!, commissionPerUnitCents: parseMoney(row.commission)!, additionalCommissionCents: parseMoney(row.extraCommission)!, shift: row.shift })),
@@ -110,7 +115,7 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
       owners: catalog.owners,
       openingBusinessCashCents: parseMoney(openingCash)!, reservedBusinessCashCents: parseMoney(reservedCash)!, notes: notes.trim(),
     };
-  }, [purchases, sales, leftovers, expenses, openingCash, reservedCash, courierRuns, creditEnabled, creditAmount, creditReference, catalog, date, notes, collectionsCents, customContributions, contributionAmounts]);
+  }, [purchases, sales, leftovers, expenses, openingCash, reservedCash, courierRuns, creditEnabled, creditAmount, creditReference, catalog, date, notes, collectionsCents, customContributions, contributionAmounts, useBusinessCashForPm, businessCashForPm]);
 
   const summary = input ? calculateSettlement(input) : null;
   const shiftMetrics = input ? calculateShiftMetrics(input) : [];
@@ -163,11 +168,13 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
         </section>
         <section className="card p-5 sm:p-6" aria-label="Aportes de capital">
           <h2 className="text-lg font-extrabold">Capital para la compra</h2>
-          <p className="mt-1 text-xs text-[var(--muted)]">El costo se reparte 50/50 en dinero; los panes no se dividen entre socios. Indica si alguien adelantó más efectivo.</p>
-          <p className="mt-3 text-sm font-bold">Costo total: {formatMoney(summary?.purchaseCostCents ?? 0)} · Mitad de cada socio: {formatMoney(Math.floor((summary?.purchaseCostCents ?? 0) / 2))}{(summary?.purchaseCostCents ?? 0) % 2 ? " (un centavo adicional para el primer socio)" : ""}</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">El costo se reparte 50/50 en dinero; los panes no se dividen entre socios. Indica si usaron efectivo de las ventas de AM para comprar panes de PM.</p>
+          <label className="mt-4 flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="size-5 accent-[var(--green)]" checked={useBusinessCashForPm} onChange={(event) => setUseBusinessCashForPm(event.target.checked)} /> Usamos dinero de la caja de AM para comprar panes de PM</label>
+          {useBusinessCashForPm && <label className={`${labelClass} mt-2 max-w-xs`}>Monto usado de caja para panes de PM · S/<input className={inputClass} inputMode="decimal" value={businessCashForPm} onChange={(event) => setBusinessCashForPm(event.target.value)} /></label>}
+          <p className="mt-3 text-sm font-bold">Costo total: {formatMoney(summary?.purchaseCostCents ?? 0)} · De caja: {formatMoney(summary?.businessPaidPurchasesCents ?? 0)} · Aportado por socios: {formatMoney(Math.max(0, (summary?.purchaseCostCents ?? 0) - (summary?.businessPaidPurchasesCents ?? 0)))}</p>
           <label className="mt-4 flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="size-5 accent-[var(--green)]" checked={customContributions} onChange={(event) => { if (event.target.checked && input) setContributionAmounts(Object.fromEntries(input.capitalContributions.map((line) => [line.ownerId, soles(line.amountCents)]))); setCustomContributions(event.target.checked); }} /> Los aportes reales fueron distintos de 50/50</label>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">{catalog.owners.map((owner) => <label key={owner.id} className={labelClass}>Aportó {owner.name} · S/<input className={inputClass} inputMode="decimal" value={customContributions ? contributionAmounts[owner.id] ?? "" : soles(input?.capitalContributions.find((line) => line.ownerId === owner.id)?.amountCents ?? 0)} onChange={(event) => setContributionAmounts({ ...contributionAmounts, [owner.id]: event.target.value })} disabled={!customContributions} /></label>)}</div>
-          <p className="mt-2 text-xs text-[var(--muted)]">Al liquidar se devuelve lo realmente aportado; la utilidad permanece 50/50.</p>
+          <p className="mt-2 text-xs text-[var(--muted)]">Solo se devuelve lo realmente aportado por ustedes. El dinero de AM usado en PM no es un nuevo aporte ni otra venta. La utilidad del día permanece 50/50. Si pagaron AM y PM por adelantado después de liquidar el día anterior, deja la opción de caja desactivada.</p>
         </section>
         <section className="card p-5 sm:p-6">
           <h2 className="mb-4 text-lg font-extrabold">2. Ventas por turno</h2>
