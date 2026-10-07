@@ -41,8 +41,10 @@ export function allocateCents(totalCents: number, weights: { id: string; weight:
 export function calculateSettlement(input: ClosureInput) {
   const totals = calculateClosure(input);
   const owners = [...input.owners].sort((a, b) => a.sortOrder - b.sortOrder);
-  if (owners.length !== 2 || owners.reduce((sum, owner) => sum + owner.shareBps, 0) !== 10000) {
-    throw new Error("Se requieren dos socios con participaciones que sumen 100%.");
+  if (owners.length < 1 || owners.some((owner) => !Number.isSafeInteger(owner.shareBps) || owner.shareBps < 0)
+    || new Set(owners.map((owner) => owner.id)).size !== owners.length
+    || owners.reduce((sum, owner) => sum + owner.shareBps, 0) !== 10000) {
+    throw new Error("Los porcentajes de los socios deben sumar 100%.");
   }
 
   const cashBeforeSettlementCents = requireSafeCents(

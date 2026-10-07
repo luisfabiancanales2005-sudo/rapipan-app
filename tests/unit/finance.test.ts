@@ -32,6 +32,24 @@ function example(): ClosureInput {
 }
 
 describe("dinero y utilidad", () => {
+  it("reparte la demo entre un socio o varios con porcentajes personalizados", () => {
+    const solo = example();
+    solo.owners = [{ id: FABIANA, name: "Socio 1", shareBps: 10000, priorCapitalCents: 0, sortOrder: 1 }];
+    solo.capitalContributions = [{ ownerId: FABIANA, amountCents: 7500 }];
+    expect(validateClosure(solo, true)).toEqual([]);
+    expect(calculateSettlement(solo).settlements.map((owner) => owner.economicProfitShareCents)).toEqual([1950]);
+    expect(validateClosure(solo).length).toBeGreaterThan(0);
+
+    const three = example();
+    three.owners = [
+      { id: FABIANA, name: "Socio 1", shareBps: 5000, priorCapitalCents: 0, sortOrder: 1 },
+      { id: FABIAN, name: "Socio 2", shareBps: 3000, priorCapitalCents: 0, sortOrder: 2 },
+      { id: "00000000-0000-4000-8000-000000000013", name: "Socio 3", shareBps: 2000, priorCapitalCents: 0, sortOrder: 3 },
+    ];
+    three.capitalContributions = three.owners.map((owner) => ({ ownerId: owner.id, amountCents: 2500 }));
+    expect(validateClosure(three, true)).toEqual([]);
+    expect(calculateSettlement(three).settlements.map((owner) => owner.economicProfitShareCents)).toEqual([975, 585, 390]);
+  });
   it("convierte soles a centavos sin redondeos de coma flotante", () => {
     expect(parseMoney("S/ 4.50")).toBe(450);
     expect(parseMoney("4,5")).toBe(450);

@@ -1,5 +1,9 @@
+"use client";
+
 import { DashboardContent } from "@/components/dashboard/dashboard";
 import { MobileNav, Sidebar } from "@/components/layout/navigation";
+import { useDemoSettings } from "@/components/preview/demo-settings";
+import { allocateCents } from "@/lib/finance/settlement";
 import type { ClosureFacts } from "@/lib/dashboard/metrics";
 
 function example(date: string, salesCents: number, profitCents: number, soldQuantity: number, giftedQuantity = 0): ClosureFacts {
@@ -22,5 +26,8 @@ const facts = [
 ];
 
 export default function DashboardPreviewPage() {
-  return <div className="page-shell"><Sidebar /><main className="main-content"><DashboardContent facts={facts} latestRecordedDate="2026-09-25" today="2026-09-25" preview /></main><MobileNav /></div>;
+  const { configuration } = useDemoSettings();
+  const owners = configuration.owners.map((owner) => ({ id: owner.id, weight: owner.profit_share_bps, sortOrder: owner.sort_order }));
+  const personalizedFacts = facts.map((fact) => ({ ...fact, ownerProfitSharesCents: Object.values(allocateCents(fact.profitCents, owners)) }));
+  return <div className="page-shell"><Sidebar /><main className="main-content"><DashboardContent facts={personalizedFacts} latestRecordedDate="2026-09-25" today="2026-09-25" preview /></main><MobileNav /></div>;
 }

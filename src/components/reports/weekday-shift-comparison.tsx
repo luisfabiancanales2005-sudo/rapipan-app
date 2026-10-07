@@ -4,7 +4,7 @@ import type { summarizeWeekdayShifts } from "@/lib/reports/metrics";
 const weekdays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 type Summary = ReturnType<typeof summarizeWeekdayShifts>;
 
-export function WeekdayShiftComparison({ summary, incomplete }: { summary: Summary; incomplete: boolean }) {
+export function WeekdayShiftComparison({ summary, incomplete, preview = false }: { summary: Summary; incomplete: boolean; preview?: boolean }) {
   const best = {
     AM: Math.max(0, ...summary.map((day) => day.AM.salesCents ?? 0)),
     PM: Math.max(0, ...summary.map((day) => day.PM.salesCents ?? 0)),
@@ -28,7 +28,7 @@ export function WeekdayShiftComparison({ summary, incomplete }: { summary: Summa
             return <td key={shift} className="py-3 pr-3 align-top">
               <span className={isBest ? "font-black text-[var(--green-dark)]" : "font-extrabold"}>{item.salesCents === null ? "—" : formatMoney(item.salesCents)}</span>
               {isBest && <span className="ml-1 text-[0.65rem] font-extrabold text-[var(--green-dark)]">Mejor {shift}</span>}
-              <span className="block text-xs text-[var(--muted)]">{item.count === 0 ? "Sin turnos registrados" : `${item.count} ${item.count === 1 ? "turno" : "turnos"} · ${item.soldQuantity} panes prom.`}</span>
+              <span className="block text-xs text-[var(--muted)]">{item.count === 0 ? "Sin turnos registrados" : `${item.count} ${item.count === 1 ? "turno" : "turnos"} · ${item.soldQuantity} ${preview ? "unidades" : "panes"} prom.`}</span>
             </td>;
           })}
         </tr>)}</tbody>

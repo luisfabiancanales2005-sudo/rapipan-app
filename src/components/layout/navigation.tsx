@@ -32,19 +32,21 @@ function isCurrent(pathname: string, href: string) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const preview = pathname.startsWith("/vista-previa");
 
   return (
     <aside className="sticky top-0 hidden h-screen border-r border-[var(--border)] bg-[rgba(255,255,255,0.72)] px-5 py-8 backdrop-blur-xl lg:flex lg:flex-col">
       <div className="px-3">
-        <Brand />
+        <Brand preview={preview} />
       </div>
       <nav className="mt-11 space-y-2" aria-label="Navegación principal">
         {desktopItems.map(({ href, label, icon: Icon }) => {
-          const active = isCurrent(pathname, href);
+          const destination = preview ? (href === "/" ? "/vista-previa/dashboard" : `/vista-previa${href}`) : href;
+          const active = isCurrent(pathname, destination);
           return (
             <Link
               key={href}
-              href={href}
+              href={destination}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-12 items-center gap-3 rounded-2xl px-4 text-[0.94rem] font-semibold transition-colors ${
                 active
@@ -58,12 +60,12 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <Link href="/cuenta" className="mt-7 flex min-h-11 items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[#415069] hover:bg-white hover:text-[var(--green-dark)]">
+      {!preview && <Link href="/cuenta" className="mt-7 flex min-h-11 items-center gap-3 rounded-2xl px-4 text-sm font-semibold text-[#415069] hover:bg-white hover:text-[var(--green-dark)]">
         <UserRound aria-hidden="true" size={19} /> Cuenta
-      </Link>
+      </Link>}
       <div className="mt-auto rounded-[1.4rem] bg-[var(--orange-soft)] p-4 text-sm leading-6 text-[#7b5222]">
         <span className="block font-bold text-[#6b4215]">Cierre rápido</span>
-        Registra el día y confirma que todos los panes cuadren.
+        Registra el día y confirma que {preview ? "todos los productos" : "todos los panes"} cuadren.
       </div>
     </aside>
   );
@@ -71,6 +73,7 @@ export function Sidebar() {
 
 export function MobileNav() {
   const pathname = usePathname();
+  const preview = pathname.startsWith("/vista-previa");
 
   return (
     <nav
@@ -78,11 +81,12 @@ export function MobileNav() {
       aria-label="Navegación móvil"
     >
       {mobileItems.map(({ href, label, icon: Icon }) => {
-        const active = isCurrent(pathname, href);
+        const destination = preview ? (href === "/" ? "/vista-previa/dashboard" : `/vista-previa${href}`) : href;
+        const active = isCurrent(pathname, destination);
         return (
           <Link
             key={href}
-            href={href}
+            href={destination}
             aria-current={active ? "page" : undefined}
             className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-[0.66rem] font-semibold transition-colors ${
               active ? "bg-[var(--green-soft)] text-[var(--green-dark)]" : "text-[var(--muted)]"
