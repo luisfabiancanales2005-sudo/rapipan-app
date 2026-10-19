@@ -1,5 +1,6 @@
 import { addDays, mondayOf, monthStart } from "../dates/lima";
 import { summarize, type ClosureFacts } from "../dashboard/metrics";
+import { courierWorkedMinutes } from "../couriers/time";
 
 export type ReportPreset = "this-week" | "last-week" | "this-month" | "last-month" | "custom";
 export type ReportSelection = { preset: ReportPreset; start?: string; end?: string };
@@ -8,7 +9,53 @@ export type ShiftFact = { date: string; shift: "AM" | "PM"; soldQuantity: number
 export type CourierReportRun = {
   date: string; courierId: string; courierName: string; shift: "AM" | "PM";
   deliveredQuantity: number; commissionCents: number;
+  startTime?: string; endTime?: string;
 };
+
+export type WeeklyCourierRankingRow = {
+  id: string; name: string; AM: number; PM: number; workedMinutes: number;
+  weightedQuarterUnits: number; pointsPerHour: number | null;
+  status: "eligible" | "under-minimum" | "missing-hours";
+};
+
+export function rankWeeklyCouriers(runs: CourierReportRun[], today: string): WeeklyCourierRankingRow[] {
+  const monday = mondayOf(today);
+  const grouped = new Map<string, {
+    id: string; name: string; AM: number; PM: number;
+    sessions: Map<string, { times: string; minutes: number | null }>;
+  }>();
+  for (const run of runs) {
+    if (run.date < monday || run.date > today) continue;
+    const item = grouped.get(run.courierId) ?? {
+      id: run.courierId, name: run.courierName, AM: 0, PM: 0,
+      sessions: new Map<string, { times: string; minutes: number | null }>(),
+    };
+    item.name = run.courierName;
+    item[run.shift] += run.deliveredQuantity;
+    const key = `${run.date}:${run.shift}`;
+    const times = `${run.startTime ?? ""}-${run.endTime ?? ""}`;
+    const minutes = courierWorkedMinutes(run.startTime, run.endTime);
+    const prior = item.sessions.get(key);
+    item.sessions.set(key, { times, minutes: prior && (prior.times !== times || prior.minutes === null) ? null : minutes });
+    grouped.set(run.courierId, item);
+  }
+  return [...grouped.values()].map((item): WeeklyCourierRankingRow => {
+    const sessions = [...item.sessions.values()];
+    const missingHours = sessions.some((session) => session.minutes === null);
+    const workedMinutes = sessions.reduce((sum, session) => sum + (session.minutes ?? 0), 0);
+    const weightedQuarterUnits = item.AM * 5 + item.PM * 4;
+    const status = missingHours ? "missing-hours" : workedMinutes < 120 ? "under-minimum" : "eligible";
+    return { id: item.id, name: item.name, AM: item.AM, PM: item.PM, workedMinutes,
+      weightedQuarterUnits, pointsPerHour: status === "eligible" ? weightedQuarterUnits * 15 / workedMinutes : null, status };
+  }).sort((a, b) => {
+    if (a.status !== b.status) return a.status === "eligible" ? -1 : b.status === "eligible" ? 1 : a.status === "under-minimum" ? -1 : 1;
+    if (a.status === "eligible" && b.status === "eligible") {
+      const byRate = b.weightedQuarterUnits * a.workedMinutes - a.weightedQuarterUnits * b.workedMinutes;
+      if (byRate !== 0) return byRate;
+    }
+    return b.weightedQuarterUnits - a.weightedQuarterUnits || a.name.localeCompare(b.name, "es");
+  });
+}
 
 export function summarizeCouriers(runs: CourierReportRun[]) {
   const grouped = new Map<string, {

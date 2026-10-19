@@ -13,7 +13,7 @@ export async function getReportsData(businessId: string, range: ReportRange, tod
       .eq("business_id", businessId).eq("status", "closed")
       .gte("operating_date", range.start).lte("operating_date", range.end)
       .order("operating_date").order("id").range(from, to)),
-    collectPages((from, to) => client.from("daily_closures").select("id, operating_date")
+    collectPages((from, to) => client.from("daily_closures").select("id, operating_date, shift_payload")
       .eq("business_id", businessId).eq("status", "closed")
       .gte("operating_date", week.previousStart).lte("operating_date", week.currentEnd)
       .order("operating_date").order("id").range(from, to)),
@@ -46,7 +46,7 @@ export async function getReportsData(businessId: string, range: ReportRange, tod
   }
   const liveShiftDates = new Set(shiftFacts.map((row) => row.date));
   const courierNames = new Map(couriers.map((courier) => [courier.id, courier.name]));
-  const courierRuns: CourierReportRun[] = periodClosures.flatMap((closing) => {
+  const toCourierRuns = (closing: (typeof periodClosures)[number]): CourierReportRun[] => {
     const parsed = closureSchema.shape.courierRuns.safeParse(closing.shift_payload?.courierRuns);
     if (!parsed.success) return [];
     return parsed.data.map((run) => ({
@@ -56,8 +56,12 @@ export async function getReportsData(businessId: string, range: ReportRange, tod
       shift: run.shift,
       deliveredQuantity: run.deliveredQuantity,
       commissionCents: run.deliveredQuantity * run.commissionPerUnitCents + run.additionalCommissionCents,
+      startTime: run.startTime,
+      endTime: run.endTime,
     }));
-  });
+  };
+  const courierRuns = periodClosures.flatMap(toCourierRuns);
+  const rankingRuns = weekClosures.filter((closing) => closing.operating_date >= week.currentStart).flatMap(toCourierRuns);
   for (const row of legacyShiftRows) {
     const shift = row.cells.C;
     if (!row.record_date || liveShiftDates.has(row.record_date) || (shift !== "AM" && shift !== "PM")) continue;
@@ -71,6 +75,7 @@ export async function getReportsData(businessId: string, range: ReportRange, tod
     weeklyFacts: facts.filter((fact) => fact.date >= week.previousStart && fact.date <= week.currentEnd),
     shiftFacts,
     courierRuns,
+    rankingRuns,
     pendingCreditCents: ledger.items.filter((item) => !item.collectionDateUnknown && item.saleDate >= range.start && item.saleDate <= range.end)
       .reduce((sum, item) => sum + item.remainingCents, 0),
   };

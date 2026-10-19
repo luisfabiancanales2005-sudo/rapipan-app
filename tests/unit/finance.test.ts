@@ -70,6 +70,14 @@ describe("dinero y utilidad", () => {
     expect(validateClosure(example())).toEqual([]);
   });
 
+  it("permite registrar un turno trabajado sin ventas y valida los horarios", () => {
+    const input = example();
+    input.courierRuns[0] = { ...input.courierRuns[0], deliveredQuantity: 0, startTime: "09:15", endTime: "12:00" };
+    expect(validateClosure(input)).toEqual([]);
+    input.courierRuns[0].endTime = "08:30";
+    expect(validateClosure(input)).toContain("La hora de inicio debe ser anterior a la de fin y el reparto debe durar como máximo 12 horas.");
+  });
+
   it("separa AM y PM sin duplicar el día ni ocultar un turno sin ventas", () => {
     const input = example();
     input.purchases = [

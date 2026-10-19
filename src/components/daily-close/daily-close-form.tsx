@@ -10,6 +10,7 @@ import { createDailyClosure, updateDailyClosure } from "@/lib/supabase/mutations
 import { getUnallocatedCollections } from "@/lib/supabase/queries/history";
 import { todayInLima } from "@/lib/dates/lima";
 import { validateClosure } from "@/lib/validation/daily-close";
+import { courierWorkedMinutes, DEFAULT_COURIER_TIMES, formatWorkedMinutes } from "@/lib/couriers/time";
 
 type Product = { id: string; name: string; default_cost_cents: number; default_price_cents: number };
 type Courier = { id: string; name: string; default_commission_cents: number };
@@ -25,10 +26,10 @@ type PurchaseRow = { productId: string; quantity: string; unitCost: string; shif
 type SaleRow = { productId: string; quantity: string; unitPrice: string; shift: Shift };
 type LeftoverRow = { gifted: string; consumed: string };
 type ExpenseRow = { concept: string; amount: string; payer: string; shift: Shift };
-type CourierRow = { key: string; courierId: string; productId: string; delivered: string; commission: string; extraCommission: string; shift: Shift };
+type CourierRow = { key: string; courierId: string; productId: string; delivered: string; commission: string; extraCommission: string; shift: Shift; startTime: string; endTime: string; legacyTimeMissing: boolean };
 
 function courierRow(run: CourierRunInput, key: string): CourierRow {
-  return { key, courierId: run.courierId, productId: run.productId, delivered: String(run.deliveredQuantity), commission: soles(run.commissionPerUnitCents), extraCommission: soles(run.additionalCommissionCents), shift: run.shift };
+  return { key, courierId: run.courierId, productId: run.productId, delivered: String(run.deliveredQuantity), commission: soles(run.commissionPerUnitCents), extraCommission: soles(run.additionalCommissionCents), shift: run.shift, startTime: run.startTime ?? "", endTime: run.endTime ?? "", legacyTimeMissing: run.startTime === undefined && run.endTime === undefined };
 }
 
 function soles(cents: number) { return (cents / 100).toFixed(2); }
@@ -108,7 +109,8 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
       businessPaidPurchasesCents,
       sales: saleLines.map((row) => ({ productId: row.productId, quantity: whole(row.quantity)!, unitPriceCents: parseMoney(row.unitPrice)!, shift: row.shift })),
       leftovers: catalog.products.flatMap((product) => (["AM", "PM"] as const).map((shift) => ({ productId: product.id, shift, giftedQuantity: whole(leftovers[`${shift}:${product.id}`]?.gifted || "0")!, consumedQuantity: whole(leftovers[`${shift}:${product.id}`]?.consumed || "0")! }))),
-      courierRuns: courierRuns.map((row) => ({ productId: row.productId, courierId: row.courierId, deliveredQuantity: whole(row.delivered)!, commissionPerUnitCents: parseMoney(row.commission)!, additionalCommissionCents: parseMoney(row.extraCommission)!, shift: row.shift })),
+      courierRuns: courierRuns.map((row) => ({ productId: row.productId, courierId: row.courierId, deliveredQuantity: whole(row.delivered)!, commissionPerUnitCents: parseMoney(row.commission)!, additionalCommissionCents: parseMoney(row.extraCommission)!, shift: row.shift,
+        ...(!row.legacyTimeMissing || row.startTime || row.endTime ? { startTime: row.startTime, endTime: row.endTime } : {}) })),
       expenses: expenses.map((row) => ({ concept: row.concept.trim(), amountCents: parseMoney(row.amount)!, payer: payer(row.payer), shift: row.shift })),
       credit: creditEnabled ? { amountCents: parseMoney(creditAmount)!, reference: creditReference.trim() } : null,
       creditCollectionsCents: collectionsCents,
@@ -131,11 +133,21 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
     const shift: Shift = courierRuns.some((row) => row.shift === "AM") ? "PM" : "AM";
     const courier = catalog.couriers.find((item) => !courierRuns.some((row) => row.courierId === item.id)) ?? catalog.couriers[0];
     if (!courier) return;
-    setCourierRuns((rows) => [...rows, { key: crypto.randomUUID(), shift, courierId: courier.id, productId: firstProduct.id, delivered: "", commission: soles(courier.default_commission_cents), extraCommission: "0.00" }]);
+    setCourierRuns((rows) => [...rows, { key: crypto.randomUUID(), shift, courierId: courier.id, productId: firstProduct.id, delivered: "", commission: soles(courier.default_commission_cents), extraCommission: "0.00", ...DEFAULT_COURIER_TIMES[shift], legacyTimeMissing: false }]);
   }
 
   function updateCourierRun(key: string, change: Partial<CourierRow>) {
     setCourierRuns((rows) => rows.map((row) => row.key === key ? { ...row, ...change } : row));
+  }
+
+  function updateCourierShift(key: string, shift: Shift) {
+    setCourierRuns((rows) => rows.map((row) => {
+      if (row.key !== key) return row;
+      const previousDefault = DEFAULT_COURIER_TIMES[row.shift];
+      return { ...row, shift,
+        startTime: row.startTime === previousDefault.startTime ? DEFAULT_COURIER_TIMES[shift].startTime : row.startTime,
+        endTime: row.endTime === previousDefault.endTime ? DEFAULT_COURIER_TIMES[shift].endTime : row.endTime };
+    }));
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -190,17 +202,20 @@ export function DailyCloseForm({ catalog, preview = false, businessId, initialIn
         <section className="card p-5 sm:p-6"><h2 className="mb-1 text-lg font-extrabold">3. {preview ? "Productos" : "Panes"} no vendidos</h2><p className="mb-4 text-xs text-[var(--muted)]">Regalos y consumo se registran por turno.</p>{catalog.products.flatMap((product) => (["AM", "PM"] as const).map((shift) => { const key = `${shift}:${product.id}`; return <div key={key} className="mb-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr] sm:items-end"><span className="pb-3 text-sm font-bold">{product.name} · {shift}</span><label className={labelClass}>Regalados<input className={inputClass} inputMode="numeric" value={leftovers[key]?.gifted ?? ""} onChange={(event) => setLeftovers({ ...leftovers, [key]: { gifted: event.target.value, consumed: leftovers[key]?.consumed ?? "" } })} placeholder="0" /></label><label className={labelClass}>Consumidos / merma<input className={inputClass} inputMode="numeric" value={leftovers[key]?.consumed ?? ""} onChange={(event) => setLeftovers({ ...leftovers, [key]: { gifted: leftovers[key]?.gifted ?? "", consumed: event.target.value } })} placeholder="0" /></label></div>; }))}</section>
         <section className="card p-5 sm:p-6">
           <h2 className="text-lg font-extrabold">4. Reparto y crédito</h2>
-          <p className="mt-1 text-xs text-[var(--muted)]">Registra cada reparto en su turno. AM y PM pueden tener repartidores, {preview ? "productos" : "panes"} y comisiones diferentes.</p>
+          <p className="mt-1 text-xs text-[var(--muted)]">Registra cada reparto en su turno. Edita el inicio y fin reales del tiempo disponible para vender; AM propone 9:00–12:00 y PM 16:00–20:00. Las horas sirven para el ranking, no alteran la comisión ni la caja.</p>
           <div className="mt-4 space-y-3">{courierRuns.map((row, index) => <div key={row.key} className="rounded-xl bg-[var(--surface-muted)] p-3">
             <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-extrabold">Reparto {index + 1} · {row.shift}</h3><button type="button" className="grid min-h-11 min-w-11 place-items-center rounded-xl text-red-600" aria-label={`Quitar reparto ${index + 1}`} onClick={() => setCourierRuns((rows) => rows.filter((item) => item.key !== row.key))}><Trash2 size={18} /></button></div>
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              {selectShift(row.shift, (shift) => updateCourierRun(row.key, { shift }))}
+              {selectShift(row.shift, (shift) => updateCourierShift(row.key, shift))}
               <label className={labelClass}>Repartidor<select className={inputClass} value={row.courierId} onChange={(event) => { const courierId = event.target.value; updateCourierRun(row.key, { courierId, commission: soles(catalog.couriers.find((item) => item.id === courierId)?.default_commission_cents ?? 0) }); }}>{catalog.couriers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               {selectProduct(row.productId, (productId) => updateCourierRun(row.key, { productId }))}
               <label className={labelClass}>{preview ? "Unidades" : "Panes"} entregadas<input className={inputClass} inputMode="numeric" value={row.delivered} onChange={(event) => updateCourierRun(row.key, { delivered: event.target.value })} /></label>
+              <label className={labelClass}>Hora de inicio<input className={inputClass} type="time" value={row.startTime} onChange={(event) => updateCourierRun(row.key, { startTime: event.target.value })} /></label>
+              <label className={labelClass}>Hora de fin<input className={inputClass} type="time" value={row.endTime} onChange={(event) => updateCourierRun(row.key, { endTime: event.target.value })} /></label>
               <label className={labelClass}>Comisión por {preview ? "unidad" : "pan"} S/<input className={inputClass} inputMode="decimal" value={row.commission} onChange={(event) => updateCourierRun(row.key, { commission: event.target.value })} /></label>
               <label className={labelClass}>Comisión adicional S/<input className={inputClass} inputMode="decimal" value={row.extraCommission} onChange={(event) => updateCourierRun(row.key, { extraCommission: event.target.value })} /></label>
             </div>
+            <p className="mt-2 text-xs text-[var(--muted)]">{courierWorkedMinutes(row.startTime, row.endTime) === null ? row.legacyTimeMissing && !row.startTime && !row.endTime ? "Horas no registradas: este reparto antiguo no entra al ranking." : "Ingresa un horario válido para incluir este reparto en el ranking." : `Tiempo trabajado: ${formatWorkedMinutes(courierWorkedMinutes(row.startTime, row.endTime)!)}.`}</p>
           </div>)}</div>
           <button type="button" disabled={catalog.couriers.length === 0} className="mt-3 flex min-h-11 items-center gap-2 text-sm font-bold text-[var(--green-dark)] disabled:opacity-45" onClick={addCourierRun}><Plus size={18} /> Agregar reparto</button>
           {catalog.couriers.length === 0 && <p className="mt-1 text-xs text-[var(--muted)]">Agrega un repartidor activo en Configuración para registrar repartos.</p>}

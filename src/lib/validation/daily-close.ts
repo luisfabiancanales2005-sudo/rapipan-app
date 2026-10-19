@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { calculateSettlement } from "../finance/settlement";
 import type { ClosureInput } from "../finance/types";
+import { courierWorkedMinutes } from "../couriers/time";
 
 const cents = z.number().int().nonnegative().safe();
 const quantity = z.number().int().nonnegative().safe();
@@ -20,6 +21,7 @@ export const closureSchema = z.object({
   courierRuns: z.array(z.object({
     productId: z.string().uuid(), courierId: z.string().uuid(), deliveredQuantity: quantity,
     commissionPerUnitCents: cents, additionalCommissionCents: cents, shift,
+    startTime: z.string().optional(), endTime: z.string().optional(),
   })),
   expenses: z.array(z.object({ concept: z.string().trim().min(1).max(120), amountCents: cents.positive(), payer, shift })),
   credit: z.object({ amountCents: cents.positive(), reference: z.string().max(200) }).nullable(),
@@ -65,8 +67,20 @@ export function validateClosure(input: ClosureInput, preview = false): string[] 
   if (input.courierRuns.some((run) => !productIds.has(run.productId))) {
     errors.push("El repartidor debe corresponder a un producto comprado.");
   }
-  if (input.courierRuns.some((run) => run.deliveredQuantity === 0 && run.additionalCommissionCents === 0)) {
-    errors.push(preview ? "Cada reparto debe tener unidades entregadas o una comisión adicional." : "Cada reparto debe tener panes entregados o una comisión adicional.");
+  if (input.courierRuns.some((run) => (run.startTime !== undefined || run.endTime !== undefined) && courierWorkedMinutes(run.startTime, run.endTime) === null)) {
+    errors.push("La hora de inicio debe ser anterior a la de fin y el reparto debe durar como máximo 12 horas.");
+  }
+  if (input.courierRuns.some((run) => run.deliveredQuantity === 0 && run.additionalCommissionCents === 0
+    && courierWorkedMinutes(run.startTime, run.endTime) === null)) {
+    errors.push(preview ? "Cada reparto debe tener unidades entregadas, una comisión adicional u horas trabajadas." : "Cada reparto debe tener panes entregados o una comisión adicional.");
+  }
+  const hoursByCourierShift = new Map<string, string>();
+  for (const run of input.courierRuns) {
+    const key = `${run.shift}:${run.courierId}`;
+    const value = `${run.startTime ?? ""}-${run.endTime ?? ""}`;
+    const previous = hoursByCourierShift.get(key);
+    if (previous !== undefined && previous !== value) errors.push("Un repartidor debe tener el mismo horario en todas sus líneas del mismo turno.");
+    hoursByCourierShift.set(key, value);
   }
   for (const productId of productIds) for (const shiftValue of ["AM", "PM"] as const) {
     const delivered = input.courierRuns.filter((run) => run.productId === productId && run.shift === shiftValue).reduce((sum, run) => sum + run.deliveredQuantity, 0);

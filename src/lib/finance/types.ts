@@ -29,6 +29,9 @@ export type CourierRunInput = {
   commissionPerUnitCents: number;
   additionalCommissionCents: number;
   shift: Shift;
+  // Older closures have no time recorded and are excluded from the weekly ranking.
+  startTime?: string;
+  endTime?: string;
 };
 
 export type ExpenseInput = {

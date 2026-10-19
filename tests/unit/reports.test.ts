@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, resolveReportRange, summarizeCouriers, summarizeShifts, summarizeWeekdayShifts } from "../../src/lib/reports/metrics";
+import { buildReport, rankWeeklyCouriers, resolveReportRange, summarizeCouriers, summarizeShifts, summarizeWeekdayShifts } from "../../src/lib/reports/metrics";
+import { courierWorkedMinutes } from "../../src/lib/couriers/time";
 import type { ClosureFacts } from "../../src/lib/dashboard/metrics";
 
 function fact(date: string, salesCents: number, soldQuantity: number): ClosureFacts {
@@ -9,6 +10,35 @@ function fact(date: string, salesCents: number, soldQuantity: number): ClosureFa
 }
 
 describe("reports", () => {
+  it("calcula horas reales y rechaza horas inválidas", () => {
+    expect(courierWorkedMinutes("09:15", "12:00")).toBe(165);
+    expect(courierWorkedMinutes("08:30", "12:00")).toBe(210);
+    expect(courierWorkedMinutes("16:00", "16:00")).toBeNull();
+    expect(courierWorkedMinutes("20:00", "16:00")).toBeNull();
+  });
+
+  it("ordena la semana por puntos por hora con AM a 1,25 y mínimo de 2 horas", () => {
+    const ranking = rankWeeklyCouriers([
+      { date: "2026-09-21", courierId: "am", courierName: "AM", shift: "AM", deliveredQuantity: 10, commissionCents: 1000, startTime: "09:00", endTime: "11:00" },
+      { date: "2026-09-22", courierId: "pm", courierName: "PM", shift: "PM", deliveredQuantity: 11, commissionCents: 1100, startTime: "16:00", endTime: "18:00" },
+      { date: "2026-09-23", courierId: "short", courierName: "Corto", shift: "AM", deliveredQuantity: 10, commissionCents: 1000, startTime: "09:00", endTime: "10:59" },
+      { date: "2026-09-14", courierId: "old", courierName: "Antiguo", shift: "AM", deliveredQuantity: 50, commissionCents: 5000, startTime: "09:00", endTime: "12:00" },
+    ], "2026-09-25");
+    expect(ranking.map((row) => row.name)).toEqual(["AM", "PM", "Corto"]);
+    expect(ranking[0]).toMatchObject({ workedMinutes: 120, weightedQuarterUnits: 50, pointsPerHour: 6.25, status: "eligible" });
+    expect(ranking[1].pointsPerHour).toBe(5.5);
+    expect(ranking[2].status).toBe("under-minimum");
+  });
+
+  it("cuenta las horas una vez por repartidor, fecha y turno y no inventa horas antiguas", () => {
+    const ranking = rankWeeklyCouriers([
+      { date: "2026-09-21", courierId: "one", courierName: "Ana", shift: "AM", deliveredQuantity: 3, commissionCents: 300, startTime: "09:00", endTime: "12:00" },
+      { date: "2026-09-21", courierId: "one", courierName: "Ana", shift: "AM", deliveredQuantity: 4, commissionCents: 400, startTime: "09:00", endTime: "12:00" },
+      { date: "2026-09-21", courierId: "two", courierName: "Beto", shift: "PM", deliveredQuantity: 8, commissionCents: 800 },
+    ], "2026-09-25");
+    expect(ranking[0]).toMatchObject({ name: "Ana", AM: 7, workedMinutes: 180, status: "eligible" });
+    expect(ranking[1]).toMatchObject({ name: "Beto", status: "missing-hours", pointsPerHour: null });
+  });
   it("suma panes y comisiones por repartidor sin contar dos turnos como dos días", () => {
     const summary = summarizeCouriers([
       { date: "2026-09-26", courierId: "one", courierName: "Ana", shift: "AM", deliveredQuantity: 10, commissionCents: 1000 },
